@@ -1,0 +1,30 @@
+{
+  "name": "cypress-fail-report",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "scripts": {
+    "format": "prettier src/**/*.js --write",
+    "lint": "eslint src/**/*.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GregLahaye/cypress-fail-report.git"
+  },
+  "author": "Greg Lahaye",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/GregLahaye/cypress-fail-report/issues"
+  },
+  "homepage": "https://github.com/GregLahaye/cypress-fail-report#readme",
+  "devDependencies": {
+    "cypress": "^4.1.0",
+    "eslint": "^6.8.0",
+    "eslint-config-prettier": "^6.10.0",
+    "prettier": "^1.19.1"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.28.1"
+  }
+}
