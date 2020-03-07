@@ -1,6 +1,8 @@
 const CDP = require("chrome-remote-interface");
 const fs = require("fs");
 
+const ALLOWABLE_CONSOLE_LEVELS = ["warning", "error"];
+
 const support = () => {
   beforeEach(() => {
     cy.task("clearEvents");
@@ -15,14 +17,9 @@ const support = () => {
 };
 
 const install = (on) => {
-  let events = {
-    entry: [],
-    console: [],
-    network: {
-      request: {},
-      response: {},
-    },
-  };
+  let events = {};
+
+  clearEvents(events);
 
   on("before:browser:launch", (browser, launchOptions) =>
     browserLaunchHandler(launchOptions, events),
@@ -49,38 +46,60 @@ const install = (on) => {
       return null;
     },
     clearEvents: () => {
-      events.entry = [];
-      events.console = [];
-      events.network = {
-        request: {},
-        response: {},
-      };
+      clearEvents(events);
 
       return null;
     },
   });
 };
 
-const logEntry = (params, events) => {
-  console.log(`[entry]  ${params.text}`);
-  events.entry.push(params);
+const clearEvents = (events) => {
+  events.entry = {};
+  events.console = {};
+  events.network = {
+    request: {},
+    response: {},
+  };
 };
 
-const logConsole = (params, events) => {
-  console.log(`[console]  ${params.args}`);
-  events.console.push(params);
+const logEntry = ({ entry }, events) => {
+  const { source, level, text, timestamp, url } = entry;
+
+  if (!(source in events.entry)) events.entry[source] = [];
+
+  events.entry[source].push({ source, level, text, timestamp, url });
 };
 
-const logRequest = (params, events) => {
-  console.log(`[request] ${params.requestId}`);
-  events.network.request[params.requestId] = params;
+const logConsole = ({ type, args, timestamp }, events) => {
+  if (ALLOWABLE_CONSOLE_LEVELS.includes(type)) {
+    if (!(type in events.console)) events.console[type] = [];
+
+    events.console[type].push({ args, timestamp });
+  }
 };
 
-const logResponse = (params, events) => {
-  console.log(`[response] ${params.requestId}`);
-  events.network.response[params.requestId] = params;
+const logRequest = ({ requestId, request, timestamp }, events) => {
+  const { url, method, headers } = request;
+
+  events.network.request[requestId] = { url, method, headers, timestamp };
 };
 
+const logResponse = ({ requestId, response, timestamp }, events) => {
+  const { url, status, headers, mimeType, timing } = response;
+
+  const sendTime = timing ? timing.sendEnd - timing.sendStart : -1;
+
+  events.network.response[requestId] = {
+    url,
+    status,
+    headers,
+    mimeType,
+    sendTime,
+    timestamp,
+  };
+};
+
+// credit to: https://github.com/flotwig/cypress-log-to-output/blob/master/src/log-to-output.js
 const browserLaunchHandler = (launchOptions, events) => {
   const args = launchOptions.args || launchOptions;
 
@@ -119,6 +138,7 @@ const browserLaunchHandler = (launchOptions, events) => {
   return launchOptions;
 };
 
+// credit to: https://github.com/flotwig/cypress-log-to-output/blob/master/src/log-to-output.js
 const ensureRdpPort = (args) => {
   const existing = args.find(
     (arg) => arg.slice(0, 23) === "--remote-debugging-port",
@@ -135,6 +155,7 @@ const ensureRdpPort = (args) => {
   return port;
 };
 
+// credit to: https://github.com/flotwig/cypress-log-to-output/blob/master/src/log-to-output.js
 const debugLog = (msg) => {
   console.log(`[cypress-fail-log] ${msg}`);
 };
