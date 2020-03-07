@@ -24,6 +24,7 @@ const install = (on, userConfig) => {
 
   const defaultConfig = {
     alwaysReport: false,
+    onlyFailedRequests: true,
     debug: false,
     reportsDirectory: "./cypress/reports/",
     consoleLevels: ["warning", "error"],
@@ -126,9 +127,20 @@ const logRequest = ({ requestId, request, timestamp }, events) => {
 const logResponse = ({ requestId, response, timestamp }, events) => {
   const { url, status, headers, mimeType, timing } = response;
 
+  const sendTime = timing ? timing.sendEnd - timing.sendStart : -1;
+
   if (isBlacklisted(url)) return;
 
-  const sendTime = timing ? timing.sendEnd - timing.sendStart : -1;
+  if (config.onlyFailedRequests) {
+    if (
+      status.toString().startsWith("2") ||
+      status.toString().startsWith("3")
+    ) {
+      delete events.network.request[requestId];
+
+      return;
+    }
+  }
 
   events.network.response[requestId] = {
     url,
