@@ -1,7 +1,9 @@
 const CDP = require("chrome-remote-interface");
+const minimatch = require("minimatch");
 const fs = require("fs");
+const urlUtils = require("url");
 
-const ALLOWABLE_CONSOLE_LEVELS = ["warning", "error"];
+let config;
 
 const support = () => {
   beforeEach(() => {
@@ -9,15 +11,30 @@ const support = () => {
   });
 
   afterEach(function() {
-    if (this.currentTest.state !== "passed") {
-      const title = this.currentTest.fullTitle();
-      cy.task("failReport", title);
-    }
+    const { state } = this.currentTest;
+    const title = this.currentTest.fullTitle();
+    cy.task("failReport", { state, title });
   });
 };
 
-const install = (on) => {
+const install = (on, userConfig) => {
   let events = {};
+
+  config = userConfig;
+
+  const defaultConfig = {
+    alwaysReport: false,
+    debug: false,
+    reportsDirectory: "./cypress/reports/",
+    consoleLevels: ["warning", "error"],
+    blacklistHosts: [],
+  };
+
+  for (const key in defaultConfig) {
+    if (!(key in config)) {
+      config[key] = defaultConfig[key];
+    }
+  }
 
   clearEvents(events);
 
@@ -26,22 +43,24 @@ const install = (on) => {
   );
 
   on("task", {
-    failReport: (title) => {
-      const dir = "./cypress/reports/";
-      const filename = `${dir}${title}.json`;
+    failReport: ({ state, title }) => {
+      if (config.alwaysReport || state !== "passed") {
+        const dir = config.reportsDirectory;
+        const filename = `${dir}${title}.json`;
 
-      const data = {
-        test: {
-          title,
-        },
-        events: events,
-      };
+        const data = {
+          test: {
+            title,
+          },
+          events: events,
+        };
 
-      fs.mkdir(dir, { recursive: true }, (e) => {
-        if (e) throw e;
-      });
+        fs.mkdir(dir, { recursive: true }, (e) => {
+          if (e) throw e;
+        });
 
-      fs.writeFileSync(filename, JSON.stringify(data));
+        fs.writeFileSync(filename, JSON.stringify(data));
+      }
 
       return null;
     },
@@ -62,8 +81,26 @@ const clearEvents = (events) => {
   };
 };
 
+const isBlacklisted = (urlToCheck) => {
+  return config.blacklistHosts.some((pattern) =>
+    minimatch(stripUrl(urlToCheck), pattern),
+  );
+};
+
+const stripUrl = (urlToCheck) => {
+  const { host, hostname, port } = urlUtils.parse(urlToCheck);
+
+  if (port === "80" || port === "443") {
+    return hostname;
+  }
+
+  return host;
+};
+
 const logEntry = ({ entry }, events) => {
   const { source, level, text, timestamp, url } = entry;
+
+  if (isBlacklisted(url)) return;
 
   if (!(source in events.entry)) events.entry[source] = [];
 
@@ -71,21 +108,25 @@ const logEntry = ({ entry }, events) => {
 };
 
 const logConsole = ({ type, args, timestamp }, events) => {
-  if (ALLOWABLE_CONSOLE_LEVELS.includes(type)) {
-    if (!(type in events.console)) events.console[type] = [];
+  if (!config.consoleLevels.includes(type)) return;
 
-    events.console[type].push({ args, timestamp });
-  }
+  if (!(type in events.console)) events.console[type] = [];
+
+  events.console[type].push({ args, timestamp });
 };
 
 const logRequest = ({ requestId, request, timestamp }, events) => {
   const { url, method, headers } = request;
+
+  if (isBlacklisted(url)) return;
 
   events.network.request[requestId] = { url, method, headers, timestamp };
 };
 
 const logResponse = ({ requestId, response, timestamp }, events) => {
   const { url, status, headers, mimeType, timing } = response;
+
+  if (isBlacklisted(url)) return;
 
   const sendTime = timing ? timing.sendEnd - timing.sendStart : -1;
 
@@ -155,9 +196,10 @@ const ensureRdpPort = (args) => {
   return port;
 };
 
-// credit to: https://github.com/flotwig/cypress-log-to-output/blob/master/src/log-to-output.js
 const debugLog = (msg) => {
-  console.log(`[cypress-fail-log] ${msg}`);
+  if (config.debug) {
+    console.log(`[cypress-fail-log] ${msg}`);
+  }
 };
 
 module.exports = {
